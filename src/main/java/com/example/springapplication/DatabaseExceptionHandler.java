@@ -1,6 +1,7 @@
 package com.example.springapplication;
 
 import io.github.resilience4j.ratelimiter.RequestNotPermitted;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -24,6 +25,16 @@ public class DatabaseExceptionHandler {
                 HttpStatus.SERVICE_UNAVAILABLE,
                 "The database is temporarily unavailable. Please try again later.");
         problem.setTitle("Database unavailable");
+
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(problem);
+    }
+
+    @ExceptionHandler(CallNotPermittedException.class)
+    public ResponseEntity<ProblemDetail> handleDatabaseCircuitOpen(CallNotPermittedException exception) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.SERVICE_UNAVAILABLE,
+                "Database requests are temporarily paused while the connection recovers. Please try again later.");
+        problem.setTitle("Database temporarily unavailable");
 
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(problem);
     }

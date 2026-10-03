@@ -1,5 +1,7 @@
 package com.example.springapplication;
 
+import java.util.concurrent.CallNotPermittedException;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.HttpStatus;

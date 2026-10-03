@@ -6,6 +6,8 @@ import java.time.Duration;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.ratelimiter.RateLimiter;
 import io.github.resilience4j.ratelimiter.RateLimiterConfig;
 import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
@@ -20,15 +22,18 @@ public class CustomerOrderService {
 
     private final CustomerRepository customerRepository;
     private final OrderRepository orderRepository;
+        private final CircuitBreaker databaseCircuitBreaker;
         private final RateLimiterConfig customerRateLimiterConfig;
         private final Cache<Long, RateLimiter> customerRateLimiters;
 
     public CustomerOrderService(
             CustomerRepository customerRepository,
                         OrderRepository orderRepository,
-                        RateLimiterRegistry rateLimiterRegistry) {
+                                                RateLimiterRegistry rateLimiterRegistry,
+                                                CircuitBreakerRegistry circuitBreakerRegistry) {
         this.customerRepository = customerRepository;
         this.orderRepository = orderRepository;
+                this.databaseCircuitBreaker = circuitBreakerRegistry.circuitBreaker("customerDatabase");
                 this.customerRateLimiterConfig = rateLimiterRegistry
                                 .rateLimiter("customerOrder")
                                 .getRateLimiterConfig();
@@ -40,7 +45,7 @@ public class CustomerOrderService {
 
     public Optional<CustomerWithOrdersDTO> getCustomerWithOrders(Long customerId) {
                 checkRateLimit(customerId);
-        return customerRepository.findById(customerId)
+        return databaseCircuitBreaker.executeSupplier(() -> customerRepository.findById(customerId)
                 .map(customer -> {
                     List<OrderDTO> orders = orderRepository.findAllByCustomerId(customerId).stream()
                             .map(order -> new OrderDTO(
@@ -60,36 +65,38 @@ public class CustomerOrderService {
                             customer.getState(),
                             customer.getCountry(),
                             orders);
-                });
+                }));
     }
 
     public Optional<CustomerWithOrdersDTO> getCustomerWithOrdersSql(Long customerId) {
         checkRateLimit(customerId);
-        List<CustomerOrderQueryRow> rows = orderRepository.findCustomerWithOrdersNative(customerId);
-        if (rows.isEmpty()) {
-            return Optional.empty();
-        }
+        return databaseCircuitBreaker.executeSupplier(() -> {
+            List<CustomerOrderQueryRow> rows = orderRepository.findCustomerWithOrdersNative(customerId);
+            if (rows.isEmpty()) {
+                return Optional.empty();
+            }
 
-        CustomerOrderQueryRow customer = rows.get(0);
-        List<OrderDTO> orders = rows.stream()
-                .filter(row -> row.getOrderId() != null)
-                .map(row -> new OrderDTO(
-                        row.getOrderId(),
-                        row.getOrderCustomerId(),
-                        row.getOrderPlacedAt()))
-                .toList();
+            CustomerOrderQueryRow customer = rows.get(0);
+            List<OrderDTO> orders = rows.stream()
+                    .filter(row -> row.getOrderId() != null)
+                    .map(row -> new OrderDTO(
+                            row.getOrderId(),
+                            row.getOrderCustomerId(),
+                            row.getOrderPlacedAt()))
+                    .toList();
 
-        return Optional.of(new CustomerWithOrdersDTO(
-                customer.getCustomerId(),
-                customer.getFirstName(),
-                customer.getLastName(),
-                customer.getEmail(),
-                customer.getPhoneNumber(),
-                customer.getAddLine1(),
-                customer.getAddLine2(),
-                customer.getState(),
-                customer.getCountry(),
-                orders));
+            return Optional.of(new CustomerWithOrdersDTO(
+                    customer.getCustomerId(),
+                    customer.getFirstName(),
+                    customer.getLastName(),
+                    customer.getEmail(),
+                    customer.getPhoneNumber(),
+                    customer.getAddLine1(),
+                    customer.getAddLine2(),
+                    customer.getState(),
+                    customer.getCountry(),
+                    orders));
+        });
     }
 
     private void checkRateLimit(Long customerId) {
