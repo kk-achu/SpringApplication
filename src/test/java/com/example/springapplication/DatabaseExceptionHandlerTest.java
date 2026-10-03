@@ -1,7 +1,7 @@
 package com.example.springapplication;
 
-import java.util.concurrent.CallNotPermittedException;
-
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.HttpStatus;
@@ -24,5 +24,18 @@ class DatabaseExceptionHandlerTest {
         assertEquals(
                 "The database is temporarily unavailable. Please try again later.",
                 response.getBody().getDetail());
+    }
+
+    @Test
+    void returnsServiceUnavailableWhenDatabaseCircuitIsOpen() {
+        DatabaseExceptionHandler handler = new DatabaseExceptionHandler();
+        CircuitBreaker circuitBreaker = CircuitBreaker.of("customerDatabase");
+        circuitBreaker.transitionToOpenState();
+
+        ResponseEntity<ProblemDetail> response = handler.handleDatabaseCircuitOpen(
+                CallNotPermittedException.createCallNotPermittedException(circuitBreaker));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
+        assertEquals("Database temporarily unavailable", response.getBody().getTitle());
     }
 }

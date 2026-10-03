@@ -3,6 +3,7 @@ package com.example.springapplication;
 import java.time.Duration;
 import java.util.Optional;
 
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.ratelimiter.RateLimiterConfig;
 import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
 import io.github.resilience4j.ratelimiter.RequestNotPermitted;
@@ -30,7 +31,8 @@ class CustomerOrderRateLimitTest {
         CustomerOrderService service = new CustomerOrderService(
                 customerRepository,
                 orderRepository,
-                RateLimiterRegistry.of(config));
+                RateLimiterRegistry.of(config),
+                CircuitBreakerRegistry.ofDefaults());
 
         assertTrue(service.getCustomerWithOrders(1L).isEmpty());
         assertThrows(RequestNotPermitted.class, () -> service.getCustomerWithOrdersSql(1L));
