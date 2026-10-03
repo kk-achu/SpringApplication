@@ -6,6 +6,7 @@ import java.util.Optional;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.ratelimiter.RateLimiterConfig;
 import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
+import io.micrometer.observation.ObservationRegistry;
 import io.github.resilience4j.ratelimiter.RequestNotPermitted;
 import org.junit.jupiter.api.Test;
 
@@ -32,7 +33,8 @@ class CustomerOrderRateLimitTest {
                 customerRepository,
                 orderRepository,
                 RateLimiterRegistry.of(config),
-                CircuitBreakerRegistry.ofDefaults());
+                CircuitBreakerRegistry.ofDefaults(),
+                ObservationRegistry.create());
 
         assertTrue(service.getCustomerWithOrders(1L).isEmpty());
         assertThrows(RequestNotPermitted.class, () -> service.getCustomerWithOrdersSql(1L));

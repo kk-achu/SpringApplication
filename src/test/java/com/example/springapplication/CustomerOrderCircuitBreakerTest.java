@@ -7,6 +7,7 @@ import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.ratelimiter.RateLimiterConfig;
 import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
+import io.micrometer.observation.ObservationRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
 
@@ -42,7 +43,8 @@ class CustomerOrderCircuitBreakerTest {
                 customerRepository,
                 orderRepository,
                 RateLimiterRegistry.of(rateLimiterConfig),
-                CircuitBreakerRegistry.of(circuitBreakerConfig));
+                CircuitBreakerRegistry.of(circuitBreakerConfig),
+                ObservationRegistry.create());
 
         assertThrows(DataAccessResourceFailureException.class,
                 () -> service.getCustomerWithOrders(1L));

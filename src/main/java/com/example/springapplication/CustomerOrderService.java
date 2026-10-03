@@ -1,8 +1,9 @@
 package com.example.springapplication;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
-import java.time.Duration;
+import java.util.function.Supplier;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -12,6 +13,8 @@ import io.github.resilience4j.ratelimiter.RateLimiter;
 import io.github.resilience4j.ratelimiter.RateLimiterConfig;
 import io.github.resilience4j.ratelimiter.RateLimiterRegistry;
 import io.github.resilience4j.ratelimiter.RequestNotPermitted;
+import io.micrometer.observation.Observation;
+import io.micrometer.observation.ObservationRegistry;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -25,12 +28,14 @@ public class CustomerOrderService {
         private final CircuitBreaker databaseCircuitBreaker;
         private final RateLimiterConfig customerRateLimiterConfig;
         private final Cache<Long, RateLimiter> customerRateLimiters;
+            private final ObservationRegistry observationRegistry;
 
     public CustomerOrderService(
             CustomerRepository customerRepository,
-                        OrderRepository orderRepository,
-                                                RateLimiterRegistry rateLimiterRegistry,
-                                                CircuitBreakerRegistry circuitBreakerRegistry) {
+                    OrderRepository orderRepository,
+                    RateLimiterRegistry rateLimiterRegistry,
+                    CircuitBreakerRegistry circuitBreakerRegistry,
+                    ObservationRegistry observationRegistry) {
         this.customerRepository = customerRepository;
         this.orderRepository = orderRepository;
                 this.databaseCircuitBreaker = circuitBreakerRegistry.circuitBreaker("customerDatabase");
@@ -41,63 +46,76 @@ public class CustomerOrderService {
                                 .maximumSize(MAX_CUSTOMER_LIMITERS)
                                 .expireAfterAccess(LIMITER_IDLE_EXPIRY)
                                 .build();
+                        this.observationRegistry = observationRegistry;
     }
 
     public Optional<CustomerWithOrdersDTO> getCustomerWithOrders(Long customerId) {
-                checkRateLimit(customerId);
-        return databaseCircuitBreaker.executeSupplier(() -> customerRepository.findById(customerId)
-                .map(customer -> {
-                    List<OrderDTO> orders = orderRepository.findAllByCustomerId(customerId).stream()
-                            .map(order -> new OrderDTO(
-                                    order.getOrderId(),
-                                    order.getCustomerId(),
-                                    order.getOrderPlacedAt()))
-                            .toList();
+                        return observe("service.lookup", () -> {
+                            checkRateLimit(customerId);
+                            return databaseCircuitBreaker.executeSupplier(() ->
+                                    observe("database.customer.lookup", () -> customerRepository.findById(customerId))
+                                            .map(customer -> {
+                                                List<OrderDTO> orders = observe("database.orders.lookup", () ->
+                                                        orderRepository.findAllByCustomerId(customerId).stream()
+                                                                .map(order -> new OrderDTO(
+                                                                        order.getOrderId(),
+                                                                        order.getCustomerId(),
+                                                                        order.getOrderPlacedAt()))
+                                                                .toList());
 
-                    return new CustomerWithOrdersDTO(
-                            customer.getId(),
-                            customer.getFirstName(),
-                            customer.getLastName(),
-                            customer.getEmail(),
-                            customer.getPhoneNumber(),
-                            customer.getAddLine1(),
-                            customer.getAddLine2(),
-                            customer.getState(),
-                            customer.getCountry(),
-                            orders);
-                }));
+                                                return new CustomerWithOrdersDTO(
+                                                        customer.getId(),
+                                                        customer.getFirstName(),
+                                                        customer.getLastName(),
+                                                        customer.getEmail(),
+                                                        customer.getPhoneNumber(),
+                                                        customer.getAddLine1(),
+                                                        customer.getAddLine2(),
+                                                        customer.getState(),
+                                                        customer.getCountry(),
+                                                        orders);
+                                            }));
+                        });
     }
 
     public Optional<CustomerWithOrdersDTO> getCustomerWithOrdersSql(Long customerId) {
-        checkRateLimit(customerId);
-        return databaseCircuitBreaker.executeSupplier(() -> {
-            List<CustomerOrderQueryRow> rows = orderRepository.findCustomerWithOrdersNative(customerId);
-            if (rows.isEmpty()) {
-                return Optional.empty();
-            }
+                        return observe("service.lookup.sql", () -> {
+                            checkRateLimit(customerId);
+                            return databaseCircuitBreaker.executeSupplier(() -> {
+                                List<CustomerOrderQueryRow> rows = observe("database.customer_orders.native_query",
+                                        () -> orderRepository.findCustomerWithOrdersNative(customerId));
+                                if (rows.isEmpty()) {
+                                    return Optional.empty();
+                                }
 
-            CustomerOrderQueryRow customer = rows.get(0);
-            List<OrderDTO> orders = rows.stream()
-                    .filter(row -> row.getOrderId() != null)
-                    .map(row -> new OrderDTO(
-                            row.getOrderId(),
-                            row.getOrderCustomerId(),
-                            row.getOrderPlacedAt()))
-                    .toList();
+                                CustomerOrderQueryRow customer = rows.get(0);
+                                List<OrderDTO> orders = rows.stream()
+                                        .filter(row -> row.getOrderId() != null)
+                                        .map(row -> new OrderDTO(
+                                                row.getOrderId(),
+                                                row.getOrderCustomerId(),
+                                                row.getOrderPlacedAt()))
+                                        .toList();
 
-            return Optional.of(new CustomerWithOrdersDTO(
-                    customer.getCustomerId(),
-                    customer.getFirstName(),
-                    customer.getLastName(),
-                    customer.getEmail(),
-                    customer.getPhoneNumber(),
-                    customer.getAddLine1(),
-                    customer.getAddLine2(),
-                    customer.getState(),
-                    customer.getCountry(),
-                    orders));
+                                return Optional.of(new CustomerWithOrdersDTO(
+                                        customer.getCustomerId(),
+                                        customer.getFirstName(),
+                                        customer.getLastName(),
+                                        customer.getEmail(),
+                                        customer.getPhoneNumber(),
+                                        customer.getAddLine1(),
+                                        customer.getAddLine2(),
+                                        customer.getState(),
+                                        customer.getCountry(),
+                                        orders));
+                            });
         });
     }
+
+                    private <T> T observe(String name, Supplier<T> operation) {
+                        return Observation.createNotStarted("customer-order." + name, observationRegistry)
+                                .observe(operation::get);
+                    }
 
     private void checkRateLimit(Long customerId) {
         RateLimiter rateLimiter = customerRateLimiters.get(customerId,
