@@ -8,6 +8,7 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
@@ -33,5 +34,12 @@ class GreetingControllerTest {
                 .andExpect(content().json("""
                         {"message":"Hello, World!"}
                         """));
+    }
+
+    @Test
+    void exposesActuatorHealthIncludingDatabaseStatus() throws Exception {
+        mockMvc.perform(get("/actuator/health"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.components.db.status").value("UP"));
     }
 }
