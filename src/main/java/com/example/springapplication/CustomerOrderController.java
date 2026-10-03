@@ -21,4 +21,12 @@ public class CustomerOrderController {
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
+
+    @GetMapping("/api/customers/{customerId}/ordersSql")
+    public ResponseEntity<CustomerWithOrdersDTO> getCustomerWithOrdersSql(
+            @PathVariable Long customerId) {
+        return customerOrderService.getCustomerWithOrdersSql(customerId)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
 }

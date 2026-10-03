@@ -41,4 +41,32 @@ public class CustomerOrderService {
                             orders);
                 });
     }
+
+        public Optional<CustomerWithOrdersDTO> getCustomerWithOrdersSql(Long customerId) {
+                List<CustomerOrderQueryRow> rows = orderRepository.findCustomerWithOrdersNative(customerId);
+                if (rows.isEmpty()) {
+                        return Optional.empty();
+                }
+
+                CustomerOrderQueryRow customer = rows.get(0);
+                List<OrderDTO> orders = rows.stream()
+                                .filter(row -> row.getOrderId() != null)
+                                .map(row -> new OrderDTO(
+                                                row.getOrderId(),
+                                                row.getOrderCustomerId(),
+                                                row.getOrderPlacedAt()))
+                                .toList();
+
+                return Optional.of(new CustomerWithOrdersDTO(
+                                customer.getCustomerId(),
+                                customer.getFirstName(),
+                                customer.getLastName(),
+                                customer.getEmail(),
+                                customer.getPhoneNumber(),
+                                customer.getAddLine1(),
+                                customer.getAddLine2(),
+                                customer.getState(),
+                                customer.getCountry(),
+                                orders));
+        }
 }
