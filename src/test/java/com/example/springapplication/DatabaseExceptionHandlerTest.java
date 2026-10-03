@@ -2,6 +2,7 @@ package com.example.springapplication;
 
 import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.HttpStatus;
@@ -29,7 +30,8 @@ class DatabaseExceptionHandlerTest {
     @Test
     void returnsServiceUnavailableWhenDatabaseCircuitIsOpen() {
         DatabaseExceptionHandler handler = new DatabaseExceptionHandler();
-        CircuitBreaker circuitBreaker = CircuitBreaker.of("customerDatabase");
+        CircuitBreaker circuitBreaker = CircuitBreakerRegistry.ofDefaults()
+            .circuitBreaker("customerDatabase");
         circuitBreaker.transitionToOpenState();
 
         ResponseEntity<ProblemDetail> response = handler.handleDatabaseCircuitOpen(
